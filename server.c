@@ -5,9 +5,11 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #define BUF_SIZE 256
-#define EXIT 27
+#define EXIT 'x'
 
 // Reference: https://www.educative.io/answers/how-to-implement-tcp-sockets-in-c
+
+int SENDING = 0;
 
 struct socket_wrapper {
     int port;
@@ -83,9 +85,9 @@ void connect_to_client(struct socket_wrapper* sender) {
     sender->socket.sin_addr.s_addr = inet_addr("127.0.0.1");
     
     // Send connection request to server:
-    if(connect(socket_desc, (struct sockaddr*)&(sender->socket), sizeof(sender->socket)) < 0){
-        printf("Unable to connect\n");
-        return;
+    while(connect(socket_desc, (struct sockaddr*)&(sender->socket), sizeof(sender->socket)) < 0){
+//        printf("Unable to connect\n");
+//        return;
     }
     printf("Connected with server successfully\n");
     sender->desc = socket_desc;
@@ -93,11 +95,13 @@ void connect_to_client(struct socket_wrapper* sender) {
 
 int handler(char* msg) {
     printf("Msg from client: %s\n", msg);
+    printf("%d\n", (msg[0] == EXIT));
     return (msg[0] == EXIT);
 }
 
 int handle_msgs(int client_desc, int (*handler)(char*)) {
     char client_message[BUF_SIZE];
+//    char exit_message = EXIT;
     int exit = 0;
     printf("Handling messages...\n");
     while (exit == 0) {
@@ -109,34 +113,33 @@ int handle_msgs(int client_desc, int (*handler)(char*)) {
         }
         exit = (*handler)(client_message);
     }
+    printf("Connected host has closed correction. Press \"x\" to exit.\n");
     // Respond to client:
-//    strcpy(server_message, "This is the server's message.");
-//    
-//    if (send(client_socket, server_message, strlen(server_message), 0) < 0){
+//    if (send(client_desc, exit_message, strlen(exit_message), 0) < 0){
 //        printf("Can't send\n");
 //        return -1;
 //    }
 }
 
-
 int send_msgs(int send_client_desc) {
-    char client_message[BUF_SIZE];
+    char send_message[BUF_SIZE];
     int exit = 0;
     printf("sending messages...\n");
     while (1) {
-        clean_buffer(client_message);
+        clean_buffer(send_message);
         // Get input from the user:
         printf("Enter message: ");
-        gets(client_message);
-        if (client_message[0] == 27) {
-            break;
-        }
         // Send the message to server:
-        if(send(send_client_desc, client_message, strlen(client_message), 0) < 0){
-            printf("Unable to send message\n");
-            return -1;
+        fgets(send_message, BUF_SIZE, stdin);
+//        if(send(send_client_desc, client_message, strlen(client_message), 0) < 0){
+//            printf("Unable to send message\n");
+//            return -1;
+//        }
+        send(send_client_desc, send_message, strlen(send_message), 0);
+        if (send_message[0] == EXIT) {
+            printf("Exiting...\n");
+            return 0;
         }
-        // maybe wait for ack
     }
 }
 
@@ -155,7 +158,7 @@ void * send_thread(void *args) {
 
 int main(int argc, char** argv) {
     if (argc != 3) {
-        printf("srv call must include two port numbers");
+        printf("srv call must include two port numbers\n");
         return -1;
     }
 
