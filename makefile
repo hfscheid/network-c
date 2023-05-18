@@ -1,7 +1,13 @@
-server:
-	gcc server.c -o srv
+network:
+	gcc network.c -o nw
 
 clean:
-	rm srv
+	rm nw 
 
-build: server
+main:
+	gcc network.o main.c -o run
+
+build: network
+
+test: build
+	./nw 8080 8081
