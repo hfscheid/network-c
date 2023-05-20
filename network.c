@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include <pthread.h>
 #define BUF_SIZE 256
 #define EXIT 'x'
@@ -157,6 +158,15 @@ struct network {
 
 struct network new_network(int rec_port, int send_port) {
     struct network nw;
+    if (rec_port == send_port) {
+        fprintf(stderr, "Receive and Send ports must not have the same value (here set to %d)\n",
+              rec_port);
+        exit(0);
+    }
+    if (rec_port == 0 || send_port == 0) {
+        fprintf(stderr, "Receive or Send port must not be set to 0\n");
+        exit(0);
+    }
     nw.receiver.port = rec_port;
     nw.sender.port = send_port;
     return nw;
@@ -181,18 +191,14 @@ void network_end(struct network* nw) {
     close(nw->sender.desc);
 }
 
-int main(int argc, char** argv) {
-    if (argc != 3) {
-        printf("srv call must include two port numbers\n");
-        return -1;
-    }
+// MESSAGE types must be defined in the file that imports this library.
+struct MESSAGE;
 
-    int rec_port = atoi(argv[1]);
-    int send_port = atoi(argv[2]);
-    struct network nw = new_network(rec_port, send_port);
-
-    network_start(&nw);
-    network_end(&nw);
-
+int network_send(struct network* nw) {
     return 0;
+}
+
+struct MESSAGE* network_get(struct network* nw) {
+    struct MESSAGE* m;
+    return m;
 }
