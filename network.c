@@ -16,7 +16,6 @@ struct socket_wrapper {
 };
 
 void init_receiver(struct socket_wrapper* receiver) {
-    printf("Got into init receiver\n");
     // Create socket:
     int socket_desc = socket(AF_INET, SOCK_STREAM, 0);
     
@@ -28,8 +27,6 @@ void init_receiver(struct socket_wrapper* receiver) {
     
     // Set port and IP:
     receiver->socket.sin_family = AF_INET;
-//    receiver->socket.sin_port = htons(receiver->port);
-    printf("init receiver port: %d\n", receiver->port);
     receiver->socket.sin_port = receiver->port;
     receiver->socket.sin_addr.s_addr = inet_addr("127.0.0.1");
     
@@ -81,15 +78,12 @@ void connect_to_client(struct socket_wrapper* sender) {
     
     // Set port and IP the same as server-side:
     sender->socket.sin_family = AF_INET;
-//    sender->socket.sin_port = htons(sender->port);
     sender->socket.sin_port = sender->port;
     sender->socket.sin_addr.s_addr = inet_addr("127.0.0.1");
     
     printf("Connecting to client at %d\n", sender->socket.sin_port);
     // Send connection request to server:
     while(connect(socket_desc, (struct sockaddr*)&(sender->socket), sizeof(sender->socket)) < 0){
-//        printf("Unable to connect\n");
-//        return;
     }
     printf("Connected with server successfully\n");
     sender->desc = socket_desc;
@@ -101,7 +95,6 @@ void clean_buffer(char* cli_msg) {
 
 int handler(char* msg) {
     printf("Msg from client: %s\n", msg);
-    printf("%d\n", (msg[0] == EXIT));
     return (msg[0] == EXIT);
 }
 
@@ -119,12 +112,7 @@ int handle_msgs(int client_desc, int (*handler)(char*)) {
         }
         exit = (*handler)(client_message);
     }
-    printf("Connected host has closed correction. Press \"x\" to exit.\n");
-    // Respond to client:
-//    if (send(client_desc, exit_message, strlen(exit_message), 0) < 0){
-//        printf("Can't send\n");
-//        return -1;
-//    }
+    printf("Connected host has closed connection. Press \"x\" to exit.\n");
 }
 
 int send_msgs(int send_client_desc) {
@@ -137,10 +125,6 @@ int send_msgs(int send_client_desc) {
         printf("Enter message: ");
         // Send the message to server:
         fgets(send_message, BUF_SIZE, stdin);
-//        if(send(send_client_desc, client_message, strlen(client_message), 0) < 0){
-//            printf("Unable to send message\n");
-//            return -1;
-//        }
         send(send_client_desc, send_message, strlen(send_message), 0);
         if (send_message[0] == EXIT) {
             printf("Exiting...\n");
@@ -151,11 +135,10 @@ int send_msgs(int send_client_desc) {
 
 void * rec_thread(void *args) {
     struct socket_wrapper* wrappers = (struct socket_wrapper*)args;
-    struct socket_wrapper* receiver = &(wrappers[0]);
     init_receiver(&(wrappers[0]));
-    exit(0);
     accept_client(wrappers[0].desc, &(wrappers[1]));
     handle_msgs(wrappers[1].desc, handler);
+    free(wrappers);
 }
 
 void * send_thread(void *args) {
@@ -180,10 +163,9 @@ struct network new_network(int rec_port, int send_port) {
 }
 
 void network_start(struct network* nw) {
-    printf("%d\n", nw->receiver.port);
     struct socket_wrapper receiver = nw->receiver;
     struct socket_wrapper client = nw->client;
-    struct socket_wrapper wrappers[2];
+    struct socket_wrapper* wrappers = malloc(sizeof(struct socket_wrapper)*2);
     wrappers[0] = receiver;
     wrappers[1] = client;
     pthread_create(&(nw->rec), NULL, rec_thread, wrappers);
@@ -192,7 +174,7 @@ void network_start(struct network* nw) {
 
 void network_end(struct network* nw) {
     pthread_join(nw->rec, NULL);
-//    pthread_join(nw->send, NULL);
+    pthread_join(nw->send, NULL);
     
     // Closing the sockets:
     close(nw->receiver.desc);
@@ -212,24 +194,5 @@ int main(int argc, char** argv) {
     network_start(&nw);
     network_end(&nw);
 
-//    pthread_t rec, send;
-//
-//    struct socket_wrapper sender, receiver, client;
-//    receiver.port = rec_port;
-//    sender.port = send_port;
-//    struct socket_wrapper wrappers[2] = {receiver, client};
-//    
-////    srv_socket = init_server(&server_addr, srv_port);
-//
-//    pthread_create(&rec, NULL, rec_thread, wrappers);
-//    pthread_create(&send, NULL, send_thread, &sender);
-//
-//    pthread_join(rec, NULL);
-//    pthread_join(send, NULL);
-//    
-//    // Closing the sockets:
-//    close(receiver.desc);
-//    close(sender.desc);
-    
     return 0;
 }
