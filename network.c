@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
+#include <sys/socket.h> // for inet_addr
+#include <arpa/inet.h> // for sockets
+#include <unistd.h> // just for the close() function
 #include <pthread.h>
 #define BUF_SIZE 256
 #define EXIT 'x'
+#define BEGIN 'b'
 
 // Reference: https://www.educative.io/answers/how-to-implement-tcp-sockets-in-c
 
@@ -86,7 +87,7 @@ void connect_to_client(struct socket_wrapper* sender) {
     // Send connection request to server:
     while(connect(socket_desc, (struct sockaddr*)&(sender->socket), sizeof(sender->socket)) < 0){
     }
-    printf("Connected with server successfully\n");
+    fprintf(stderr, "Connected with server successfully\n");
     sender->desc = socket_desc;
 }
 
@@ -94,67 +95,62 @@ void clean_buffer(char* cli_msg) {
     memset(cli_msg, '\0', sizeof(cli_msg));
 }
 
-int handler(char* msg) {
-    printf("Msg from client: %s\n", msg);
-    return (msg[0] == EXIT);
-}
-
-int handle_msgs(int client_desc, int (*handler)(char*)) {
-    char client_message[BUF_SIZE];
-//    char exit_message = EXIT;
-    int exit = 0;
-    printf("Handling messages...\n");
-    while (exit == 0) {
-        clean_buffer(client_message);
-        // Receive client's message:
-        if (recv(client_desc, client_message, sizeof(client_message), 0) < 0){
-            printf("Couldn't receive\n");
-            return -1;
-        }
-        exit = (*handler)(client_message);
-    }
-    printf("Connected host has closed connection. Press \"x\" to exit.\n");
-}
-
-int send_msgs(int send_client_desc) {
-    char send_message[BUF_SIZE];
-    int exit = 0;
-    printf("sending messages...\n");
-    while (1) {
-        clean_buffer(send_message);
-        // Get input from the user:
-        printf("Enter message: ");
-        // Send the message to server:
-        fgets(send_message, BUF_SIZE, stdin);
-        send(send_client_desc, send_message, strlen(send_message), 0);
-        if (send_message[0] == EXIT) {
-            printf("Exiting...\n");
-            return 0;
-        }
-    }
-}
-
-void * rec_thread(void *args) {
-    struct socket_wrapper* wrappers = (struct socket_wrapper*)args;
-    init_receiver(&(wrappers[0]));
-    accept_client(wrappers[0].desc, &(wrappers[1]));
-    handle_msgs(wrappers[1].desc, handler);
-    free(wrappers);
-}
-
-void * send_thread(void *args) {
-    struct socket_wrapper* sender = (struct socket_wrapper*)args;
-    connect_to_client(sender);
-    send_msgs(sender->desc);
-}
+// MESSAGE types must be defined in the file that imports this library.
+struct MESSAGE;
+char* SERIALIZE_MESSAGE(struct MESSAGE* m);
+void DESERIALIZE_MESSAGE(struct MESSAGE* m, char* msg);
 
 struct network {
     pthread_t rec;
     pthread_t send;
+    int connected;
+    int accepted;
     struct socket_wrapper sender;
     struct socket_wrapper receiver;
     struct socket_wrapper client;
+    char last_msg[BUF_SIZE];
+    struct network* self;
 };
+
+
+int handler(char* msg, struct network* nw) {
+    fprintf(stderr, "Msg from client: %s\n", msg);
+    strcpy(nw->last_msg, msg);
+    return (msg[0] == EXIT);
+}
+
+int handle_msgs(struct network* nw, int (*handler)(char*, struct network*)) {
+    char client_message[BUF_SIZE];
+    int exit = 0;
+    fprintf(stderr, "Handling messages...\n");
+    while (exit == 0) {
+        clean_buffer(client_message);
+        // Receive client's message:
+        if (recv(nw->client.desc, client_message, sizeof(client_message), 0) < 0){
+            fprintf(stderr, "Couldn't receive\n");
+            return -1;
+        }
+        exit = (*handler)(client_message, nw);
+    }
+    fprintf(stderr, "Connected host has closed connection. Closing listener thread\n");
+    return 0;
+}
+
+void * rec_thread(void *args) {
+//    struct socket_wrapper* wrappers = (struct socket_wrapper*)args;
+    struct network* nw = (struct network*)args;
+    init_receiver(&(nw->receiver));
+    accept_client(nw->receiver.desc, &(nw->client));
+    nw->accepted = 1;
+    handle_msgs(nw, handler);
+}
+
+void * send_thread(void *args) {
+    struct network* nw = (struct network*)args;
+    connect_to_client(&(nw->sender));
+    nw->connected = 1;
+//    send_msgs(sender->desc);
+}
 
 struct network new_network(int rec_port, int send_port) {
     struct network nw;
@@ -169,36 +165,48 @@ struct network new_network(int rec_port, int send_port) {
     }
     nw.receiver.port = rec_port;
     nw.sender.port = send_port;
+    nw.self = &nw;
+    sprintf(nw.last_msg, "%c", EXIT);
+    nw.connected = 0;
+    nw.accepted = 0;
     return nw;
 }
 
 void network_start(struct network* nw) {
-    struct socket_wrapper receiver = nw->receiver;
-    struct socket_wrapper client = nw->client;
-    struct socket_wrapper* wrappers = malloc(sizeof(struct socket_wrapper)*2);
-    wrappers[0] = receiver;
-    wrappers[1] = client;
-    pthread_create(&(nw->rec), NULL, rec_thread, wrappers);
-    pthread_create(&(nw->send), NULL, send_thread, &(nw->sender));
+    pthread_create(&(nw->rec), NULL, rec_thread, nw);
+    pthread_create(&(nw->send), NULL, send_thread, nw);
 }
 
 void network_end(struct network* nw) {
-    pthread_join(nw->rec, NULL);
-    pthread_join(nw->send, NULL);
+    while(nw->connected == 0);
+    while(nw->accepted == 0);
+    char exit[2];
+    sprintf(exit, "%c", EXIT);
+    send(nw->sender.desc, exit, strlen(exit), 0);
+//    printf("exit signal sent\n");
+//    pthread_join(nw->rec, NULL);
+//    printf("closed listener\n");
+//    pthread_join(nw->send, NULL);
     
     // Closing the sockets:
     close(nw->receiver.desc);
     close(nw->sender.desc);
 }
 
-// MESSAGE types must be defined in the file that imports this library.
-struct MESSAGE;
-
-int network_send(struct network* nw) {
-    return 0;
+int network_send(struct network* nw, struct MESSAGE* m) {
+    while(nw->connected == 0);
+    char send_message[BUF_SIZE];
+    strcpy(send_message, SERIALIZE_MESSAGE(m));
+//    sprintf(send_message, "%s\n", send_message);
+    fprintf(stderr, "sending message: %s\n", send_message);
+    return send(nw->sender.desc, send_message, strlen(send_message), 0);
 }
 
 struct MESSAGE* network_get(struct network* nw) {
+    if (nw->last_msg[0] == BEGIN) {
+        return NULL;
+    }
     struct MESSAGE* m;
+    DESERIALIZE_MESSAGE(m, nw->last_msg);
     return m;
 }

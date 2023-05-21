@@ -7,7 +7,7 @@ struct MESSAGE {
 
 char* SERIALIZE_MESSAGE(struct MESSAGE* m) {
     char* str = malloc(sizeof(char)* BUF_SIZE);
-    sprintf(str, "%d\n", m->val);
+    sprintf(str, "%d", m->val);
     return str;
 }
 
@@ -24,12 +24,10 @@ int main(int argc, char** argv) {
     int rec_port = atoi(argv[1]);
     int send_port = atoi(argv[2]);
     struct network nw = new_network(rec_port, send_port);
-    struct MESSAGE *m = NULL;
+    struct MESSAGE m;
+    m.val = 32;
     network_start(&nw);
-    do {
-        m = network_get(&nw);
-    } while(m == NULL);
-    printf("message after deserialization: %d\n", m->val);
+    network_send(&nw, &m);
     network_end(&nw);
     return 0;
 }
